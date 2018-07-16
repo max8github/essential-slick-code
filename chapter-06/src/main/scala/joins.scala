@@ -81,7 +81,7 @@ object JoinsExample extends App {
 
   // Inner join:
 
-  /*
+  /**/
   // A version reaching into the tuple...
   val inner0 =
     messages.
@@ -104,7 +104,7 @@ object JoinsExample extends App {
 
   println("Inner Join")
   exec(innerQ.result).foreach(println)
-  */
+
 
   // Left outer:
   /*
@@ -152,11 +152,11 @@ object JoinsExample extends App {
   */
 
   //ZipWith
-  /*
+  /**/
       def combiner(fst: MessageTable, snd: MessageTable) = fst.content -> snd.content
       val query = msgs.zipWith(msgs.drop(1), combiner)
       exec(query.result).foreach(println)
-  */
+
 
   //ZipWithIndex
   /*
