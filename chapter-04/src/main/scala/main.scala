@@ -2,7 +2,8 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
 import slick.jdbc.H2Profile.api._
-import scala.util.Try
+
+import scala.util.{Failure, Success, Try}
 
 object Example extends App {
 
@@ -45,18 +46,27 @@ object Example extends App {
     exec(messages.result.map(_.foreach(println)))
   }
 
+  def reverse(msg: Message): DBIO[Int] =
+    messages.filter(_.id === msg.id).
+      map(_.content).
+      update(msg.content.reverse)
+
+
   try {
     exec(populate)
 
     // Map:
-    val textAction: DBIO[Option[String]] =
-      messages.map(_.content).result.headOption
+    val textAction: DBIO[Option[String]] = messages.map(_.content).result.headOption
 
-    val encrypted: DBIO[Option[String]] =
-      textAction.map(maybeText => maybeText.map(_.reverse))
+    val encrypted: DBIO[Option[String]] = textAction.map(maybeText => maybeText.map(_.reverse))
 
     println("\nAn 'encrypted' message from the database:")
     println(exec(encrypted))
+
+    //DBIO.sequence
+    val updates: DBIO[Seq[DBIO[Int]]] = messages.result.map(msgs => msgs.map(reverse))
+    val updates2: DBIO[Seq[Int]] = messages.result.flatMap(msgs => DBIO.sequence(msgs.map(reverse)))
+
 
     // FlatMap:
     val delete: DBIO[Int] = messages.delete
@@ -103,6 +113,90 @@ object Example extends App {
     println("\nResult from rolling back:")
     println(exec(willRollback.asTry))
     printCurrentDatabaseState
+
+
+
+    //Exercises
+    val drop: DBIO[Unit] = messages.schema.drop
+    val create: DBIO[Unit] = messages.schema.create
+    val seed: DBIO[Option[Int]] = messages ++= testData
+    val resetDb = drop andThen create andThen seed
+    exec(resetDb)
+    printCurrentDatabaseState
+
+    //First!
+    def insertF(m: Message): DBIO[Int] = {
+      messages.result.headOption.flatMap {
+        case None => messages += (m.copy(content = s"First! ${m.content}"))
+        case _ => messages += m
+      }
+    }
+
+    //Only one
+    println("------------------- Only one -----")
+    def onlyOne[T](action: DBIO[Seq[T]]): DBIO[T] = action.flatMap {
+        case seq if seq.size == 1 => action.map(seq => seq.head)
+        case _=> DBIO.failed(new RuntimeException("more than one"))
+    }
+    val happy = messages.filter(_.content like "%sorry%").result
+    val boom = messages.filter(_.content like "%I%").result
+    val out = exec(onlyOne(happy))
+    println(s"only one ok: $out")
+//    val outBoom = exec(onlyOne(boom))
+//    println(s"only one ok: $outBoom")
+
+    //Exactly one
+    println("------------------- Exactly one -----")
+    def exactlyOne[T](action: DBIO[Seq[T]]): DBIO[Try[T]] = action.flatMap {
+        case seq if seq.size == 1 => action.map(seq => seq.head)
+        case _=> DBIO.failed(new RuntimeException("more than one"))
+    }.asTry
+    val outS = exec(exactlyOne(happy))
+    println(s"only one ok: $outS")
+    val outF = exec(exactlyOne(boom))
+    println(s"only one ok: $outF")
+
+    //Filter
+    println("------------------- Filter -----")
+    def myFilter[T](action: DBIO[T])(p: T => Boolean)(alternative: => T) = {
+      val t = action.filter(p).asTry
+      t.map {
+        case Success(s) => s
+        case Failure(f) => alternative
+      }
+    }
+    val myf = myFilter(messages.size.result)( _ > 100)(100)
+    println(s"filter: $myf")
+
+    //Unfold
+    println("------------------- Unfold -----")
+    final case class Room(name: String, connectsTo: String)
+
+    // defined class Room
+    final class FloorPlan(tag: Tag) extends Table[Room](tag, "floorplan") {
+      def name = column[String]("name")
+
+      def connectsTo = column[String]("next")
+
+      def * = (name, connectsTo).mapTo[Room]
+    }
+
+    lazy val floorplan = TableQuery[FloorPlan]
+    // floorplan: slick.lifted.TableQuery[FloorPlan] = <lazy>
+    Example.exec {
+      (floorplan.schema.create) >>
+        (floorplan += Room("Outside", "Podbay Door")) >>
+        (floorplan += Room("Podbay Door", "Podbay")) >>
+        (floorplan += Room("Podbay", "Galley")) >>
+        (floorplan += Room("Galley", "Computer")) >>
+        (floorplan += Room("Computer", "Engine Room"))
+    }
+
+    def unfold(z: String, f: String => DBIO[Option[String]], acc: Seq[String] = Seq.empty): DBIO[Seq[String]] = {
+      ???
+    }
+
+    println(s"filter: $myf")
 
   } finally db.close
 

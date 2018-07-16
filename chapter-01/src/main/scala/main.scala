@@ -22,8 +22,7 @@ object Example extends App {
   )
 
   // Schema for the "message" table:
-  final class MessageTable(tag: Tag)
-      extends Table[Message](tag, "message") {
+  final class MessageTable(tag: Tag) extends Table[Message](tag, "message") {
 
     def id      = column[Long]("id", O.PrimaryKey, O.AutoInc)
     def sender  = column[String]("sender")

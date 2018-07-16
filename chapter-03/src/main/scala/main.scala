@@ -24,8 +24,7 @@ object Example extends App {
   val db = Database.forConfig("chapter03")
 
   // Helper method for running a query in this example file:
-  def exec[T](program: DBIO[T]): T =
-    Await.result(db.run(program), 5000 milliseconds)
+  def exec[T](program: DBIO[T]): T = Await.result(db.run(program), 5000 milliseconds)
 
 
   def testData = Seq(
@@ -35,19 +34,16 @@ object Example extends App {
     Message("HAL",  "I'm sorry, Dave. I'm afraid I can't do that."))
 
   def populate: DBIOAction[Option[Int], NoStream,Effect.All] =  {
-    for {    
-    //Drop table if it already exists, then create the table:
-    _     <- messages.schema.drop.asTry andThen messages.schema.create
-    // Add some data:
-    count <- messages ++= testData
-  } yield count
-    
-    
+    for {
+      _ <- messages.schema.drop.asTry andThen messages.schema.create //Drop table if it already exists, then create the table:
+      count <- messages ++= testData
+    } yield count
   }
 
   // Utility to print out what is in the database:
-  def printCurrentDatabaseState() = {
-    println("\nState of the database:")
+  def printCurrentDatabaseState(msg: String*) = {
+    val m = msg.mkString
+    println(s"\nState of the database $m:")
     exec(messages.result.map(_.foreach(println)))
   }
 
@@ -84,6 +80,15 @@ object Example extends App {
         map(message => (message.sender, message.content))
 
     val rowsAffected  = exec(query.update(("HAL 9000", "Sure, Dave. Come right in.")))
+    printCurrentDatabaseState("------------------------")
+
+    //UPSERT
+    val upser = messages.insertOrUpdate(Message("Max", "So sleepy...", 8L))
+    exec(upser)
+    printCurrentDatabaseState("------------------------")
+    val upser2 = messages.insertOrUpdate(Message("Max", "Movie tonite?", 8L))
+    exec(upser2)
+    printCurrentDatabaseState("------------------------")
 
     // Action for updating multiple fields:
     exec {
@@ -100,6 +105,58 @@ object Example extends App {
     def modify(msg: Message): DBIO[Int] = messages.filter(_.id === msg.id).update(exclaim(msg))
     val action: DBIO[Seq[Int]] = all.flatMap( msgs => DBIO.sequence(msgs.map(modify)) )
     val rowCounts: Seq[Int] = exec(action)
+
+
+    //------
+    val conversation = List(
+      Message("Bob", "Hi Alice"),
+      Message("Alice","Hi Bob"),
+      Message("Bob", "Are you sure this is secure?"),
+      Message("Alice","Totally, why do you ask?"),
+      Message("Bob", "Oh, nothing, just wondering."),
+      Message("Alice","Ten was too many messages"),
+      Message("Bob", "I could do with a sleep"),
+      Message("Alice","Let's just to to the point"),
+      Message("Bob", "Okay okay, no need to be tetchy."),
+      Message("Alice","Humph!"))
+
+    val allDelete = exec(messages.delete)
+    println(s"All rows deleted: $rowsDeleted")
+    exec(messages.result) foreach println
+    exec(populate)
+
+    //---
+    println("\n//------------ msg inserts back:")
+    val ten = messages returning messages.map(_.id) into{ (message, id) => message.copy(id = id)}
+    val insertTen = ten ++= conversation
+    val idsTen = exec(insertTen)
+    idsTen foreach println
+    println("\n//------------ All now:")
+    exec(messages.result) foreach println
+
+    //---
+    val sorrys = messages.filter(_.content like "%sorry%")
+    val sorryDeletes = exec(sorrys.delete)
+    println(s"\n//------------ Sorry deletes were $sorryDeletes:")
+    println("\n//------------ All now:")
+    exec(messages.result) foreach println
+
+    //---
+    val ups = for {
+      m <- messages if m.sender == "HAL"
+    } yield (m.sender, m.content)
+    println("\n//------------ For expr update:")
+    exec(ups.update(("HAL", "Hi")))
+
+    //---
+    exec(populate)
+    val firstTwo = messages.filter{_.id in messages.filter(_.sender === "HAL").sortBy(_.id.asc).map(_.id).take(2)}
+    println("\n//------------ Delete first two HAL msges. Before:")
+    exec(messages.filter(_.sender === "HAL").result) foreach println
+    println("\n//---------- After:")
+    exec(firstTwo.delete)
+    exec(messages.filter(_.sender === "HAL").result) foreach println
+
 
   } finally db.close
 

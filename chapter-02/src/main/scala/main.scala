@@ -70,5 +70,52 @@ object Example extends App {
       }
     )
 
+    val count = messages.length
+    val c = exec(count.result)
+    println(s"count=$c")
+
+    val msg1 = for {
+      message <- messages if message.id === 1L
+    } yield message
+    val m1 = exec(msg1.result)
+    println(s"message 1 = $m1")
+
+    val selectM1 = messages.filter(_.id === 1L)
+    val action = selectM1.result
+
+    val exis = messages.filter(_.sender === "HAL").exists
+    val real = exec(exis.result)
+    println(s"exists=$real")
+
+    val contents = messages.map(_.content)
+    exec(contents.result) foreach(println)
+
+    val firstH = messages.filter(_.sender === "HAL").map(_.content).take(1)
+    println("\n---- first HAL msg:----")
+    exec(firstH.result) foreach(println)
+
+    val firstA = messages.filter(_.sender === "Alice").map(_.content).result.headOption
+    println("\n---- first Alice msg:----")
+    exec(firstA) foreach(println)
+
+    val lastH = messages.filter(_.sender === "HAL").map(_.content).drop(1).take(5)
+    println("\n---- last HAL msg:----")
+    exec(lastH.result) foreach(println)
+
+    val start = messages.filter(_.content startsWith  "Open").map(_.content)
+    println("\n---- Open msg:----")
+    exec(start.result) foreach(println)
+
+    val like = messages.filter(_.content.toLowerCase like  "%do%").map(_.content)
+    println("\n---- Like msg:----")
+    exec(like.result) foreach(println)
+
+    println("\n---- All bang msg:----")
+    exec(messages.map(_.content ++ LiteralColumn("!")).result)
+
+    println("\n---- All bang again msg:----")
+    exec(messages.map(m => m.content ++ "!").result)
+
+
   } finally db.close
 }
